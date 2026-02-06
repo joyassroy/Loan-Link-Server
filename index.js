@@ -295,7 +295,13 @@ app.patch('/applications/payment/:id', verifyToken, async (req, res) => {
       const result = await loansCollection.insertOne(loan);
       res.send(result);
     });
-
+    // Admin: Delete Application
+    app.delete('/applications/:id', verifyToken, verifyAdmin, async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await applicationsCollection.deleteOne(query);
+        res.send(result);
+    });
     // Admin/Manager: Delete Loan
     app.delete('/loans/:id', verifyToken, verifyManager, async (req, res) => {
       const id = req.params.id;
