@@ -138,7 +138,27 @@ async function run() {
       const result = await usersCollection.insertOne(user);
       res.send(result);
     });
+// Update User Profile (Name & Photo)
+    app.patch('/users/update/:email', verifyToken, async (req, res) => {
+        const email = req.params.email;
+        const user = req.body;
+        
+        // Security Check
+        if (email !== req.user.email) {
+            return res.status(403).send({ message: 'forbidden access' });
+        }
 
+        const filter = { email: email };
+        const updatedDoc = {
+            $set: {
+                name: user.name,
+                // আমরা ডাটাবেসে photoURL নামেই সেভ করি, যদি তোমার স্কিমা ভিন্ন হয় তবে চেক করো
+                image: user.photoURL 
+            }
+        };
+        const result = await usersCollection.updateOne(filter, updatedDoc);
+        res.send(result);
+    });
     // Admin: Update User Role (or Suspend)
     app.patch('/users/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
@@ -173,6 +193,31 @@ app.patch('/applications/payment/:id', verifyToken, async (req, res) => {
 });
 
 // Borrower: Get My Applications
+// GET: Applications (Admin sees all, User sees theirs)
+    app.get('/applications', verifyToken, async (req, res) => {
+        try {
+            const email = req.query.email; // ইউজার যে ইমেইল দিয়ে খুঁজছে
+
+            let query = {};
+
+            if (email) {
+                // টোকেন চেক
+                if (req.user.email !== email) {
+                    return res.status(403).send({ message: 'forbidden access' });
+                }
+                
+                // 🔥 CHANGE: ডাটাবেসে এখন ফিল্ডের নাম 'email', তাই কুয়েরিও হবে 'email' দিয়ে
+                query = { email: email }; 
+            }
+
+            const result = await applicationsCollection.find(query).toArray();
+            res.send(result);
+
+        } catch (error) {
+            console.error("Error fetching applications:", error);
+            res.status(500).send({ message: "Internal Server Error" });
+        }
+    });
     app.get('/applications/my-application', verifyToken, async (req, res) => {
       try {
           const email = req.query.email;
