@@ -66,7 +66,7 @@ async function run() {
         
         res.cookie('token', token, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production', // লাইভ সার্ভারে true হবে
+            secure: true, // লাইভ সার্ভারে true হবে
             sameSite: 'none',
         }).send({ success: true });
     });
