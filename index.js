@@ -14,8 +14,7 @@ app.use(cors({
   origin: [
     'http://localhost:5173', 
     'https://assignment-11-468e1.web.app'
-     // তোমার Vercel Frontend Link (যদি থাকে)
-    // ভবিষ্যতে তোমার ফ্রন্টএন্ড যেখানে ডিপ্লয় করবে, সেই লিংক এখানে দিবে
+
   ],
   credentials: true
 }));
@@ -66,7 +65,7 @@ async function run() {
         
         res.cookie('token', token, {
             httpOnly: true,
-            secure: true, // লাইভ সার্ভারে true হবে
+            secure: true, 
             sameSite: 'none',
         }).send({ success: true });
     });
@@ -332,5 +331,5 @@ app.listen(port, () => {
   console.log(`LoanLink is sitting on port ${port}`);
 });
 
-// ✅ Vercel এর জন্য এটা জরুরি
+
 module.exports = app;
