@@ -13,6 +13,7 @@ const port = process.env.PORT || 5013;
 app.use(cors({
   origin: [
     'http://localhost:5173', 
+    'https://assignment-11-468e1.web.app'
      // তোমার Vercel Frontend Link (যদি থাকে)
     // ভবিষ্যতে তোমার ফ্রন্টএন্ড যেখানে ডিপ্লয় করবে, সেই লিংক এখানে দিবে
   ],
