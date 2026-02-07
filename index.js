@@ -13,8 +13,7 @@ const port = process.env.PORT || 5013;
 app.use(cors({
   origin: [
     'http://localhost:5173', 
-    'https://loanlink-app.web.app', // তোমার Firebase Frontend Link (যদি থাকে)
-    'https://loanlink-app.vercel.app', // তোমার Vercel Frontend Link (যদি থাকে)
+     // তোমার Vercel Frontend Link (যদি থাকে)
     // ভবিষ্যতে তোমার ফ্রন্টএন্ড যেখানে ডিপ্লয় করবে, সেই লিংক এখানে দিবে
   ],
   credentials: true
@@ -68,7 +67,7 @@ async function run() {
         res.cookie('token', token, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production', // লাইভ সার্ভারে true হবে
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+            sameSite: 'none',
         }).send({ success: true });
     });
 
