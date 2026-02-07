@@ -51,8 +51,7 @@ const verifyToken = (req, res, next) => {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
-    // await client.connect(); // Vercel এ কানেকশন বারবার ওপেন না করাই ভালো, তাই এটা কমেন্ট রাখতে পারো বা রাখতেও পারো।
+    
 
     // Database Collections
     const db = client.db('LoanLinkDB');
