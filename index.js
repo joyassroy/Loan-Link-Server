@@ -11,7 +11,12 @@ const port = process.env.PORT || 5013;
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173'], // REPLACE WITH YOUR LINKS
+  origin: [
+    'http://localhost:5173', 
+    'https://loanlink-app.web.app', // তোমার Firebase Frontend Link (যদি থাকে)
+    'https://loanlink-app.vercel.app', // তোমার Vercel Frontend Link (যদি থাকে)
+    // ভবিষ্যতে তোমার ফ্রন্টএন্ড যেখানে ডিপ্লয় করবে, সেই লিংক এখানে দিবে
+  ],
   credentials: true
 }));
 app.use(express.json());
@@ -31,7 +36,7 @@ const client = new MongoClient(uri, {
 // Verify Token Middleware
 const verifyToken = (req, res, next) => {
   const token = req.cookies?.token;
-  console.log('Token received in backend:', token);
+  // console.log('Token received in backend:', token);
   if (!token) {
     return res.status(401).send({ message: 'unauthorized access' });
   }
@@ -46,7 +51,9 @@ const verifyToken = (req, res, next) => {
 
 async function run() {
   try {
-    await client.connect();
+    // Connect the client to the server	(optional starting in v4.7)
+    // await client.connect(); // Vercel এ কানেকশন বারবার ওপেন না করাই ভালো, তাই এটা কমেন্ট রাখতে পারো বা রাখতেও পারো।
+
     // Database Collections
     const db = client.db('LoanLinkDB');
     const usersCollection = db.collection('users');
@@ -54,14 +61,14 @@ async function run() {
     const applicationsCollection = db.collection('applications');
 
     // --- AUTHENTICATION & JWT ---
-   app.post('/jwt', async (req, res) => {
+    app.post('/jwt', async (req, res) => {
         const user = req.body;
         const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
         
         res.cookie('token', token, {
             httpOnly: true,
-            secure: false,
-            sameSite: 'lax', // <--- এখানে 'strict' এর বদলে 'lax' দিয়ে দাও
+            secure: process.env.NODE_ENV === 'production', // লাইভ সার্ভারে true হবে
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
         }).send({ success: true });
     });
 
@@ -89,8 +96,7 @@ async function run() {
       const email = req.user.email;
       const query = { email: email };
       const user = await usersCollection.findOne(query);
-      const isManager = user?.role === 'manager'; // Only check manager
-      // NOTE: Admins might also need access to manager routes, but per requirements, keep strict.
+      const isManager = user?.role === 'manager'; 
       if (!isManager && user?.role !== 'admin') { 
         return res.status(403).send({ message: 'forbidden access' });
       }
@@ -103,66 +109,51 @@ async function run() {
       res.send(result);
     });
 
-    // Check User Role
     app.get('/users/role/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
-
-      // সিকিউরিটি চেক
       if (email !== req.user.email) {
           return res.status(403).send({ message: 'forbidden access' });
       }
-
       const query = { email: email };
       const user = await usersCollection.findOne(query);
-
-      // 👇 ফিক্স: যদি ইউজার না থাকে, তবুও একটা রেসপন্স পাঠাও
       if (user) {
           res.send({ role: user.role });
       } else {
-          // ইউজার ডাটাবেসে না থাকলেও অ্যাপ যেন ক্র্যাশ না করে
           res.send({ role: 'borrower' }); 
       }
     });
 
     app.post('/users', async (req, res) => {
       const user = req.body;
-      
-      // ১. চেক করা ইউজার অলরেডি আছে কিনা
       const query = { email: user.email };
       const existingUser = await usersCollection.findOne(query);
       if (existingUser) {
         return res.send({ message: 'user already exists', insertedId: null });
       }
-
-      // ২. না থাকলে নতুন ইউজার হিসেবে সেভ করা
       const result = await usersCollection.insertOne(user);
       res.send(result);
     });
-// Update User Profile (Name & Photo)
+
     app.patch('/users/update/:email', verifyToken, async (req, res) => {
         const email = req.params.email;
         const user = req.body;
-        
-        // Security Check
         if (email !== req.user.email) {
             return res.status(403).send({ message: 'forbidden access' });
         }
-
         const filter = { email: email };
         const updatedDoc = {
             $set: {
                 name: user.name,
-                // আমরা ডাটাবেসে photoURL নামেই সেভ করি, যদি তোমার স্কিমা ভিন্ন হয় তবে চেক করো
                 image: user.photoURL 
             }
         };
         const result = await usersCollection.updateOne(filter, updatedDoc);
         res.send(result);
     });
-    // Admin: Update User Role (or Suspend)
+
     app.patch('/users/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
-      const { role } = req.body; // role can be 'admin', 'manager', 'borrower'
+      const { role } = req.body;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = {
         $set: { role: role }
@@ -170,88 +161,69 @@ async function run() {
       const result = await usersCollection.updateOne(filter, updatedDoc);
       res.send(result);
     });
-    // Manager: Get Pending Applications
+
     app.get('/applications/pending', verifyToken, verifyManager, async (req, res) => {
       const query = { status: 'pending' };
       const result = await applicationsCollection.find(query).toArray();
       res.send(result);
     });
 
-    // Server: Update Application to Paid
-app.patch('/applications/payment/:id', verifyToken, async (req, res) => {
-    const id = req.params.id;
-    const paymentInfo = req.body;
-    const filter = { _id: new ObjectId(id) };
-    const updatedDoc = {
-        $set: {
-            paymentStatus: 'paid',
-            transactionId: paymentInfo.transactionId
-        }
-    };
-    const result = await applicationsCollection.updateOne(filter, updatedDoc);
-    res.send(result);
-});
+    app.patch('/applications/payment/:id', verifyToken, async (req, res) => {
+        const id = req.params.id;
+        const paymentInfo = req.body;
+        const filter = { _id: new ObjectId(id) };
+        const updatedDoc = {
+            $set: {
+                paymentStatus: 'paid',
+                transactionId: paymentInfo.transactionId
+            }
+        };
+        const result = await applicationsCollection.updateOne(filter, updatedDoc);
+        res.send(result);
+    });
 
-// Borrower: Get My Applications
-// GET: Applications (Admin sees all, User sees theirs)
     app.get('/applications', verifyToken, async (req, res) => {
         try {
-            const email = req.query.email; // ইউজার যে ইমেইল দিয়ে খুঁজছে
-
+            const email = req.query.email; 
             let query = {};
-
             if (email) {
-                // টোকেন চেক
                 if (req.user.email !== email) {
                     return res.status(403).send({ message: 'forbidden access' });
                 }
-                
-                // 🔥 CHANGE: ডাটাবেসে এখন ফিল্ডের নাম 'email', তাই কুয়েরিও হবে 'email' দিয়ে
                 query = { email: email }; 
             }
-
             const result = await applicationsCollection.find(query).toArray();
             res.send(result);
-
         } catch (error) {
             console.error("Error fetching applications:", error);
             res.status(500).send({ message: "Internal Server Error" });
         }
     });
+
     app.get('/applications/my-application', verifyToken, async (req, res) => {
       try {
           const email = req.query.email;
-          
-          // 1. Debugging: Console log to see if hit
-          console.log("Fetching applications for:", email);
-
-          // 2. Security Check
           if (!req.user) {
               return res.status(403).send({ message: 'User not found in token' });
           }
           if (req.user.email !== email) {
               return res.status(403).send({ message: 'forbidden access' });
           }
-
           const query = { email: email };
-          
-          // 3. Database Call
           const result = await applicationsCollection.find(query).toArray();
           res.send(result);
-
       } catch (error) {
-          // 4. Print the Real Error in Terminal
           console.error("Error inside /applications/my-application:", error); 
           res.status(500).send({ message: 'Internal Server Error' });
       }
     });
-    // Manager: Get Approved Applications Only
+
     app.get('/applications/approved', verifyToken, verifyManager, async (req, res) => {
       const query = { status: 'approved' };
       const result = await applicationsCollection.find(query).toArray();
       res.send(result);
     });
-// Get Single Application by ID (For Payment Page)
+
     app.get('/applications/:id', verifyToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -259,7 +231,6 @@ app.patch('/applications/payment/:id', verifyToken, async (req, res) => {
       res.send(result);
     });
 
-// Admin: Toggle "Show on Home"
     app.patch('/loans/featured/:id', verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const { showOnHome } = req.body;
@@ -271,17 +242,13 @@ app.patch('/applications/payment/:id', verifyToken, async (req, res) => {
       res.send(result);
     });
 
-
     // --- LOANS API ---
-    
-    // Public: Get all loans (for Home & All Loans page)
     app.get('/loans', async (req, res) => {
       const filter = req.query.category ? { category: req.query.category } : {};
       const result = await loansCollection.find(filter).toArray();
       res.send(result);
     });
 
-    // Public: Get Single Loan
     app.get('/loans/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -289,54 +256,38 @@ app.patch('/applications/payment/:id', verifyToken, async (req, res) => {
       res.send(result);
     });
 
-    // Manager: Add Loan
     app.post('/loans', verifyToken, verifyManager, async (req, res) => {
       const loan = req.body;
       const result = await loansCollection.insertOne(loan);
       res.send(result);
     });
-    // Admin: Delete Application
+
     app.delete('/applications/:id', verifyToken, verifyAdmin, async (req, res) => {
         const id = req.params.id;
         const query = { _id: new ObjectId(id) };
         const result = await applicationsCollection.deleteOne(query);
         res.send(result);
     });
-    // Admin/Manager: Delete Loan
+
     app.delete('/loans/:id', verifyToken, verifyManager, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await loansCollection.deleteOne(query);
       res.send(result);
     });
-    // Admin: Get All Applications
-    app.get('/applications', verifyToken, verifyAdmin, async (req, res) => {
-      const result = await applicationsCollection.find().toArray();
-      res.send(result);
-    });
-
-    
 
     // --- APPLICATION API ---
-
-    // Borrower: Apply for loan
     app.post('/applications', verifyToken, async (req, res) => {
       const application = req.body;
-      // Add default status
       application.status = 'pending'; 
       application.appliedDate = new Date();
       const result = await applicationsCollection.insertOne(application);
       res.send(result);
     });
 
-    
-
-    
-
-    // Manager: Approve/Reject Application
     app.patch('/applications/status/:id', verifyToken, verifyManager, async (req, res) => {
       const id = req.params.id;
-      const { status } = req.body; // 'approved' or 'rejected'
+      const { status } = req.body; 
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = {
         $set: { status: status }
@@ -349,25 +300,18 @@ app.patch('/applications/payment/:id', verifyToken, async (req, res) => {
     app.post('/create-payment-intent', verifyToken, async (req, res) => {
       try {
           const { price } = req.body;
-          
-          // Validation check
           if (!price || typeof price !== 'number') {
               return res.status(400).send({ error: "Invalid price" });
           }
-
-          // Math.round is safer than parseInt for currency (e.g. 10.99)
           const amount = Math.round(price * 100); 
-
           const paymentIntent = await stripe.paymentIntents.create({
             amount: amount,
             currency: 'usd',
             payment_method_types: ['card']
           });
-
           res.send({
             clientSecret: paymentIntent.client_secret
           });
-
       } catch (error) {
           console.log("Stripe Error:", error);
           res.status(500).send({ error: error.message });
@@ -388,3 +332,6 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`LoanLink is sitting on port ${port}`);
 });
+
+// ✅ Vercel এর জন্য এটা জরুরি
+module.exports = app;
