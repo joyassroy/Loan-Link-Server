@@ -319,7 +319,7 @@ async function run() {
 
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
-    // Ensures that the client will close when you finish/error
+    
   }
 }
 run().catch(console.dir);
