@@ -240,12 +240,67 @@ async function run() {
       res.send(result);
     });
 
-    // --- LOANS API ---
+    // --- ADVANCED LOANS API (Search, Filter, Sort, Pagination) ---
     app.get('/loans', async (req, res) => {
-      const filter = req.query.category ? { category: req.query.category } : {};
-      const result = await loansCollection.find(filter).toArray();
-      res.send(result);
-    });
+      // ✅ FIX: req.query থেকে পাওয়া ভ্যালুগুলো স্ট্রিং হিসেবে আসে, তাই Number() দিয়ে কনভার্ট করা জরুরি
+      const page = Number(req.query.page) || 0;
+      const size = Number(req.query.size) || 6; 
+      
+      const filter = req.query.category || ''; // Category
+      const search = req.query.search || ''; // Search Text
+      const sort = req.query.sort || ''; // Sort Option
+
+      // 1. Build Query (Search & Filter)
+      let query = {};
+      if (search) {
+          query.title = { $regex: search, $options: 'i' }; 
+      }
+      
+      if (filter) {
+          query.category = { $regex: filter, $options: 'i' }; 
+      }
+
+      // 2. Build Sort Option
+      let sortOption = {};
+      if (sort === 'limit-asc') {
+          sortOption = { maxLimit: 1, maxLoanLimit: 1 }; 
+      } else if (sort === 'limit-desc') {
+          sortOption = { maxLimit: -1, maxLoanLimit: -1 }; 
+      } else if (sort === 'interest-asc') {
+          sortOption = { interestRate: 1, interest: 1 }; 
+      } else if (sort === 'interest-desc') {
+          sortOption = { interestRate: -1, interest: -1 }; 
+      }
+
+      // 3. Fetch Data with Pagination
+      // ✅ FIX: page * size হিসাবটা ডাটাবেসকে বলে দেয় কতটা স্কিপ করতে হবে
+      const skipAmount = page * size; 
+
+      try {
+          const result = await loansCollection.find(query)
+              .sort(sortOption)
+              .skip(skipAmount)  // ✅ স্কিপ করা হচ্ছে
+              .limit(size)       // ✅ লিমিট সেট করা হচ্ছে
+              .toArray();
+              
+          res.send(result);
+      } catch (error) {
+          console.error("Error fetching paginated loans:", error);
+          res.status(500).send({ message: "Failed to fetch loans" });
+      }
+  });
+  // --- LOANS COUNT API (For Pagination Total Pages) ---
+  app.get('/loansCount', async (req, res) => {
+      const filter = req.query.category || '';
+      const search = req.query.search || '';
+      
+      let query = {};
+      if (search) query.title = { $regex: search, $options: 'i' };
+      if (filter) query.category = { $regex: filter, $options: 'i' };
+
+      const count = await loansCollection.countDocuments(query);
+      res.send({ count });
+  });
 
     app.get('/loans/:id', async (req, res) => {
       const id = req.params.id;
